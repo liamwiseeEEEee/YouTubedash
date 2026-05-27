@@ -583,8 +583,230 @@ main {
         </button>
         <div id="whoopAuthStatus" class="whoop-auth-status"></div>
       </div>
+      <div id="whoopConnected" class="whoop-connected" style="display:none">
+        <div class="whoop-conn-head">
+          <div class="whoop-brand">
+            <span class="whoop-brand-mark">W</span>
+            <span class="whoop-brand-text">WHOOP</span>
+          </div>
+          <button id="whoopDisconnectBtn" type="button" class="whoop-disc-btn">Disconnect</button>
+        </div>
+        <div id="whoopErr" class="whoop-err" style="display:none"></div>
+        <div class="whoop-grid">
+          <div class="whoop-cell">
+            <div class="whoop-cell-label">Recovery</div>
+            <div id="whoopRecovery" class="whoop-cell-val">—</div>
+            <div id="whoopRecoverySub" class="whoop-cell-sub">—</div>
+          </div>
+          <div class="whoop-cell">
+            <div class="whoop-cell-label">Sleep</div>
+            <div id="whoopSleep" class="whoop-cell-val">—</div>
+            <div id="whoopSleepSub" class="whoop-cell-sub">—</div>
+          </div>
+          <div class="whoop-cell">
+            <div class="whoop-cell-label">Strain</div>
+            <div id="whoopStrain" class="whoop-cell-val">—</div>
+            <div id="whoopStrainSub" class="whoop-cell-sub">today</div>
+          </div>
+          <div class="whoop-cell">
+            <div class="whoop-cell-label">HRV</div>
+            <div id="whoopHrv" class="whoop-cell-val">—</div>
+            <div class="whoop-cell-sub">ms</div>
+          </div>
+          <div class="whoop-cell">
+            <div class="whoop-cell-label">RHR</div>
+            <div id="whoopRhr" class="whoop-cell-val">—</div>
+            <div class="whoop-cell-sub">bpm</div>
+          </div>
+          <div class="whoop-cell">
+            <div class="whoop-cell-label">Resp</div>
+            <div id="whoopResp" class="whoop-cell-val">—</div>
+            <div class="whoop-cell-sub">rpm</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+  <style>
+    .whoop-conn-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+    .whoop-disc-btn {
+      background:transparent; border:1px solid rgba(255,255,255,0.10);
+      color:var(--text-tertiary); padding:6px 12px;
+      border-radius:999px; cursor:pointer; font-family:inherit; font-size:11px;
+      letter-spacing:0.04em;
+    }
+    .whoop-disc-btn:hover { color:var(--text-secondary); border-color:rgba(255,255,255,0.20); }
+    .whoop-err {
+      background:rgba(255,107,107,0.08); border:1px solid rgba(255,107,107,0.28);
+      color:#FF8A8A; padding:10px 12px; border-radius:10px;
+      font-size:11.5px; font-family:var(--font-mono); margin-bottom:14px;
+    }
+    .whoop-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+    @media (max-width: 480px) { .whoop-grid { grid-template-columns:repeat(2, 1fr); } }
+    .whoop-cell {
+      background:rgba(255,255,255,0.025); border:1px solid transparent;
+      border-radius:12px; padding:14px 12px; text-align:center;
+    }
+    .whoop-cell-label {
+      font-size:10px; color:var(--text-tertiary);
+      text-transform:uppercase; letter-spacing:0.14em; font-weight:700;
+      margin-bottom:6px;
+    }
+    .whoop-cell-val {
+      font-size:22px; font-weight:700; color:var(--text-primary);
+      font-variant-numeric:tabular-nums; letter-spacing:-0.03em;
+      line-height:1;
+    }
+    .whoop-cell-sub {
+      font-size:10px; color:var(--text-tertiary);
+      margin-top:5px; font-variant-numeric:tabular-nums;
+      font-family:var(--font-mono);
+    }
+  </style>
+  <script>
+  (function () {
+    const KEY = 'whoop_tokens_v1';
+    const CLIENT_ID = '3b9d1b01-31fb-4bd8-b18c-c7fa27deed2f';
+    const REDIRECT  = 'https://ytdashfinal.vercel.app/api/whoop-callback';
+    const SCOPES    = 'read:recovery read:sleep read:workout read:cycles read:profile read:body_measurement offline';
+
+    function loadTokens() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
+    function saveTokens(t) { try { localStorage.setItem(KEY, JSON.stringify(t)); } catch {} }
+    function clearTokens() { try { localStorage.removeItem(KEY); } catch {} }
+
+    // 1) If WHOOP just bounced us back via /api/whoop-callback with tokens
+    //    in the URL hash, grab them and stash in localStorage.
+    if (location.hash && location.hash.indexOf('whoop_access') !== -1) {
+      const h = new URLSearchParams(location.hash.slice(1));
+      const access  = h.get('whoop_access');
+      const refresh = h.get('whoop_refresh');
+      const expires = Number(h.get('whoop_expires')) || (Date.now() + 3500 * 1000);
+      if (access) {
+        saveTokens({ access, refresh, expires });
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    }
+
+    const disconnectedEl = document.getElementById('whoopDisconnected');
+    const connectedEl    = document.getElementById('whoopConnected');
+    const connectBtn     = document.getElementById('whoopConnectBtn');
+    const disconnectBtn  = document.getElementById('whoopDisconnectBtn');
+    const errEl          = document.getElementById('whoopErr');
+
+    connectBtn.addEventListener('click', () => {
+      const url = 'https://api.prod.whoop.com/oauth/oauth2/auth'
+        + '?client_id='     + encodeURIComponent(CLIENT_ID)
+        + '&redirect_uri='  + encodeURIComponent(REDIRECT)
+        + '&response_type=code'
+        + '&scope='         + encodeURIComponent(SCOPES)
+        + '&state='         + Math.random().toString(36).slice(2);
+      location.href = url;
+    });
+    disconnectBtn.addEventListener('click', () => { clearTokens(); render(); });
+
+    function showErr(msg) {
+      errEl.textContent = msg;
+      errEl.style.display = msg ? 'block' : 'none';
+    }
+
+    async function refreshToken(t) {
+      if (!t.refresh) return null;
+      try {
+        const r = await fetch('/api/whoop-refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: t.refresh }),
+        });
+        const j = await r.json();
+        if (j.access_token) {
+          const next = {
+            access:  j.access_token,
+            refresh: j.refresh_token || t.refresh,
+            expires: Date.now() + (j.expires_in || 3500) * 1000,
+          };
+          saveTokens(next);
+          return next;
+        }
+      } catch {}
+      return null;
+    }
+
+    async function whoopFetch(path, t) {
+      const r = await fetch('https://api.prod.whoop.com/developer/v1' + path, {
+        headers: { 'Authorization': 'Bearer ' + t.access, 'Accept': 'application/json' },
+      });
+      if (r.status === 401) {
+        const next = await refreshToken(t);
+        if (next) return whoopFetch(path, next);
+        throw new Error('unauthorized — please reconnect');
+      }
+      if (!r.ok) throw new Error('WHOOP ' + r.status + ': ' + (await r.text()));
+      return await r.json();
+    }
+
+    function fmtMins(ms) {
+      const m = Math.round(ms / 60000);
+      const h = Math.floor(m / 60), r = m % 60;
+      return h + 'h ' + String(r).padStart(2, '0') + 'm';
+    }
+
+    async function loadData() {
+      let t = loadTokens();
+      if (!t) return;
+      if (t.expires && Date.now() > t.expires - 60000) {
+        const next = await refreshToken(t);
+        if (next) t = next;
+      }
+      showErr('');
+      try {
+        const [rec, sleep, cycle] = await Promise.all([
+          whoopFetch('/recovery?limit=1', t).catch(() => null),
+          whoopFetch('/activity/sleep?limit=1', t).catch(() => null),
+          whoopFetch('/cycle?limit=1', t).catch(() => null),
+        ]);
+
+        const r = rec && rec.records && rec.records[0] && rec.records[0].score;
+        if (r) {
+          document.getElementById('whoopRecovery').textContent = Math.round(r.recovery_score || 0) + '%';
+          document.getElementById('whoopHrv').textContent      = Math.round(r.hrv_rmssd_milli || 0);
+          document.getElementById('whoopRhr').textContent      = Math.round(r.resting_heart_rate || 0);
+          document.getElementById('whoopRecoverySub').textContent =
+            r.recovery_score >= 67 ? 'high recovery' :
+            r.recovery_score >= 34 ? 'moderate'       : 'low';
+        }
+
+        const s = sleep && sleep.records && sleep.records[0];
+        if (s && s.score && s.score.stage_summary) {
+          const ss = s.score.stage_summary;
+          const totalSleep = (ss.total_in_bed_time_milli || 0) - (ss.total_awake_time_milli || 0);
+          document.getElementById('whoopSleep').textContent    = fmtMins(totalSleep);
+          document.getElementById('whoopSleepSub').textContent = Math.round(s.score.sleep_performance_percentage || 0) + '% perf';
+          document.getElementById('whoopResp').textContent     = (s.score.respiratory_rate || 0).toFixed(1);
+        }
+
+        const c = cycle && cycle.records && cycle.records[0] && cycle.records[0].score;
+        if (c && c.strain != null) {
+          document.getElementById('whoopStrain').textContent = c.strain.toFixed(1);
+        }
+      } catch (e) {
+        showErr(e.message || String(e));
+      }
+    }
+
+    function render() {
+      const t = loadTokens();
+      if (t && t.access) {
+        disconnectedEl.style.display = 'none';
+        connectedEl.style.display    = '';
+        loadData();
+      } else {
+        disconnectedEl.style.display = '';
+        connectedEl.style.display    = 'none';
+      }
+    }
+    render();
+  })();
+  </script>
 
   <div class="section-title">Daily Stack</div>
 
