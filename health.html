@@ -589,7 +589,14 @@ main {
             <span class="whoop-brand-mark">W</span>
             <span class="whoop-brand-text">WHOOP</span>
           </div>
-          <button id="whoopDisconnectBtn" type="button" class="whoop-disc-btn">Disconnect</button>
+          <div class="whoop-conn-actions">
+            <button id="whoopRefreshBtn" type="button" class="whoop-refresh-btn" aria-label="Refresh" title="Refresh">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 4v6h-6"/><path d="M20.49 15A9 9 0 1 1 5.64 5.64L23 10"/>
+              </svg>
+            </button>
+            <button id="whoopDisconnectBtn" type="button" class="whoop-disc-btn">Disconnect</button>
+          </div>
         </div>
         <div id="whoopErr" class="whoop-err" style="display:none"></div>
         <div class="whoop-grid">
@@ -629,6 +636,16 @@ main {
   </div>
   <style>
     .whoop-conn-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+    .whoop-conn-actions { display:flex; align-items:center; gap:8px; }
+    .whoop-refresh-btn {
+      width:30px; height:30px; border-radius:50%;
+      background:transparent; border:1px solid rgba(255,255,255,0.10);
+      color:var(--text-tertiary); cursor:pointer;
+      display:inline-flex; align-items:center; justify-content:center;
+      transition:color 0.15s, border-color 0.15s, transform 0.4s;
+    }
+    .whoop-refresh-btn:hover { color:var(--text-primary); border-color:rgba(255,255,255,0.20); }
+    .whoop-refresh-btn.is-spinning { transform:rotate(360deg); }
     .whoop-disc-btn {
       background:transparent; border:1px solid rgba(255,255,255,0.10);
       color:var(--text-tertiary); padding:6px 12px;
@@ -703,6 +720,13 @@ main {
       location.href = url;
     });
     disconnectBtn.addEventListener('click', () => { clearTokens(); render(); });
+
+    const refreshBtn = document.getElementById('whoopRefreshBtn');
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.classList.add('is-spinning');
+      try { await loadData(); }
+      finally { setTimeout(() => refreshBtn.classList.remove('is-spinning'), 600); }
+    });
 
     function showErr(msg) {
       errEl.textContent = msg;
