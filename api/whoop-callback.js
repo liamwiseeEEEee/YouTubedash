@@ -18,9 +18,13 @@ export default async function handler(req, res) {
 
   const clientId     = process.env.WHOOP_CLIENT_ID;
   const clientSecret = process.env.WHOOP_CLIENT_SECRET;
-  const redirectUri  = process.env.WHOOP_REDIRECT_URI;
-  if (!clientId || !clientSecret || !redirectUri) {
-    return res.status(500).send('Server not configured (missing WHOOP_* env vars).');
+  // Prefer the env var if set, otherwise derive the redirect from the live
+  // host so it always matches what the browser sent (origin + this path).
+  const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+  const host  = req.headers['x-forwarded-host'] || req.headers.host;
+  const redirectUri = process.env.WHOOP_REDIRECT_URI || (proto + '://' + host + '/api/whoop-callback');
+  if (!clientId || !clientSecret) {
+    return res.status(500).send('Server not configured (missing WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET).');
   }
 
   try {
