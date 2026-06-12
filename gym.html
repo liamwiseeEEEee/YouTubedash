@@ -3526,19 +3526,33 @@ img, video, canvas, svg { max-width: 100%; }
 
 <!-- ===== Nova gym coach (top-right avatar, bring-your-own Anthropic key) ===== -->
 <style>
+  /* Anchor the avatar to the top-right of the page content, not the far corner. */
+  .po-shell { position: relative; }
   #nvFab {
-    position: fixed; top: calc(env(safe-area-inset-top) + 56px); right: 14px; z-index: 60;
+    position: absolute; top: 16px; right: 16px; z-index: 30;
     width: 46px; height: 46px; border-radius: 50%; border: 0; cursor: pointer; padding: 0;
-    background: radial-gradient(circle at 35% 30%, #C9B8FF, #7C5CFF 60%, #4C2EC9);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 6px 22px rgba(124,92,255,0.5);
-    display: flex; align-items: center; justify-content: center;
-    -webkit-tap-highlight-color: transparent; transition: transform 0.12s;
+    overflow: hidden; -webkit-tap-highlight-color: transparent; transition: transform 0.12s;
+    background: radial-gradient(circle at 50% 58%, #8A6CFF, #4C2EC9 80%);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 6px 22px rgba(124,92,255,0.55),
+                inset 0 -6px 14px rgba(38,10,86,0.65);
   }
   #nvFab:active { transform: scale(0.93); }
-  #nvFab .nv-orb { font-size: 22px; filter: drop-shadow(0 0 4px rgba(255,255,255,0.5)); }
-  #nvFab .nv-online { position: absolute; right: 2px; bottom: 2px; width: 11px; height: 11px; border-radius: 50%; background: #6ee7b7; border: 2px solid #0a0a0b; }
+  /* swirling conic plasma */
+  #nvFab::before {
+    content: ''; position: absolute; inset: -28%; border-radius: 50%;
+    background: conic-gradient(from 0deg, #6D4AE0, #C9B8FF, #7C5CFF, #B98AFF, #8A6CFF, #6D4AE0);
+    filter: blur(2px); opacity: 0.92; animation: nvspin 7s linear infinite;
+  }
+  /* glassy gloss highlight + bottom shade */
+  #nvFab::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle at 34% 26%, rgba(255,255,255,0.92), rgba(255,255,255,0) 40%),
+                radial-gradient(circle at 72% 82%, rgba(18,7,40,0.5), transparent 55%);
+  }
+  @keyframes nvspin { to { transform: rotate(360deg); } }
+  #nvFab .nv-online { position: absolute; right: 1px; bottom: 1px; z-index: 2; width: 11px; height: 11px; border-radius: 50%; background: #6ee7b7; border: 2px solid #0a0a0b; box-shadow: 0 0 6px rgba(110,231,183,0.7); }
   #nvPanel {
-    position: fixed; top: calc(env(safe-area-inset-top) + 110px); right: 14px; z-index: 60;
+    position: absolute; top: 72px; right: 16px; z-index: 30;
     width: min(340px, calc(100vw - 28px)); max-height: 66vh; display: none; flex-direction: column;
     background: #111016; border: 1px solid rgba(255,255,255,0.10); border-radius: 18px;
     box-shadow: 0 24px 70px rgba(0,0,0,0.65); overflow: hidden;
@@ -3546,7 +3560,9 @@ img, video, canvas, svg { max-width: 100%; }
   }
   #nvPanel.open { display: flex; }
   .nv-head { display: flex; align-items: center; gap: 9px; padding: 13px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
-  .nv-head .nv-av { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #C9B8FF, #7C5CFF 60%, #4C2EC9); display:flex; align-items:center; justify-content:center; font-size: 14px; }
+  .nv-head .nv-av { position: relative; overflow: hidden; width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    background: radial-gradient(circle at 34% 26%, rgba(255,255,255,0.85), rgba(255,255,255,0) 42%),
+               conic-gradient(from 0deg, #6D4AE0, #C9B8FF, #7C5CFF, #B98AFF, #6D4AE0); }
   .nv-head .nv-name { font-size: 14px; font-weight: 700; color: #FAFAFA; }
   .nv-head .nv-sub { font-size: 10.5px; color: #76746E; }
   .nv-head .nv-x { margin-left: auto; border: 0; background: transparent; color: #76746E; font-size: 20px; cursor: pointer; line-height: 1; }
@@ -3566,10 +3582,10 @@ img, video, canvas, svg { max-width: 100%; }
   .nv-dots i:nth-child(2){animation-delay:.15s} .nv-dots i:nth-child(3){animation-delay:.3s}
   @keyframes nvb { 0%,100%{opacity:.3;transform:translateY(0)} 50%{opacity:1;transform:translateY(-3px)} }
 </style>
-<button id="nvFab" type="button" aria-label="Open Nova coach"><span class="nv-orb">🧠</span><span class="nv-online"></span></button>
+<button id="nvFab" type="button" aria-label="Open Nova coach"><span class="nv-online"></span></button>
 <div id="nvPanel" role="dialog" aria-label="Nova gym coach">
   <div class="nv-head">
-    <div class="nv-av">🧠</div>
+    <div class="nv-av"></div>
     <div><div class="nv-name">Nova</div><div class="nv-sub">your gym coach</div></div>
     <button class="nv-x" id="nvClose" type="button" aria-label="Close">×</button>
   </div>
@@ -3591,6 +3607,11 @@ img, video, canvas, svg { max-width: 100%; }
   const $ = (id) => document.getElementById(id);
   const fab = $('nvFab'), panel = $('nvPanel'), body = $('nvBody'), input = $('nvInput');
   let busy = false, greeted = false;
+
+  // Move the avatar + panel inside .po-shell so they anchor to the
+  // top-right of the page content (not the far viewport corner).
+  const shell = document.querySelector('.po-shell');
+  if (shell) { shell.appendChild(fab); shell.appendChild(panel); }
 
   function savedKey() { try { return localStorage.getItem(KEY_LS) || ''; } catch (e) { return ''; } }
 
