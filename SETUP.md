@@ -55,16 +55,27 @@ create policy "anon manage progress-photos"
   with check (bucket_id = 'progress-photos');
 ```
 
-### Put YOUR Supabase keys in the code
-Supabase → **Project Settings → API**. Copy the **Project URL** and the **anon / publishable**
-key, then replace the placeholders in these files (find the old URL/key and swap yours in):
+### Connect YOUR Supabase — pick ONE way
+Supabase → **Project Settings → API**. Copy the **Project URL** and the **anon / publishable** key.
 
+**Way A — Vercel env vars (easiest, no code edits):**
+In Vercel → **Settings → Environment Variables**, add:
+
+| Variable | Value |
+|---|---|
+| `SUPABASE_URL` | your Project URL |
+| `SUPABASE_ANON_KEY` | your anon / publishable key |
+
+Redeploy. The app reads these automatically via `/api/config`.
+
+**Way B — edit the files:**
+Replace the old URL/key in these files:
 - [`sync.js`](sync.js)
 - [`topbar.js`](topbar.js)
 - [`gym.html`](gym.html)
 
-> ⚠️ Only the **anon** key goes in the code. **Never** put the `service_role` key in any
-> `.html`/`.js` file.
+> ⚠️ Only the **anon** key (public) is used here. **Never** put the `service_role` key in code
+> or in these env vars.
 
 ---
 
