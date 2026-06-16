@@ -157,6 +157,67 @@ body::after {
 /* Sections: hide non-active when bottom tabs are in use */
 .section[hidden] { display: none !important; }
 
+/* ===== Nova — AI money coach ===== */
+.nova-wrap { display: flex; flex-direction: column; gap: 12px; }
+.nova-messages {
+  display: flex; flex-direction: column; gap: 10px;
+  min-height: 240px; max-height: 58vh; overflow-y: auto;
+  padding: 2px;
+}
+.nova-msg {
+  max-width: 88%; padding: 10px 13px; border-radius: 14px;
+  font-size: 13.5px; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.nova-msg-user {
+  align-self: flex-end;
+  background: rgba(255,255,255,0.10);
+  color: var(--text-primary);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-bottom-right-radius: 4px;
+}
+.nova-msg-nova {
+  align-self: flex-start;
+  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-bottom-left-radius: 4px;
+}
+.nova-msg-loading { color: var(--text-tertiary); font-style: italic; }
+.nova-suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
+.nova-chip {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.10);
+  color: var(--text-secondary);
+  border-radius: 999px; padding: 7px 13px;
+  font-size: 12px; font-family: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.nova-chip:hover { background: rgba(255,255,255,0.07); color: var(--text-primary); }
+.nova-composer { display: flex; gap: 8px; align-items: flex-end; }
+.nova-input {
+  flex: 1; resize: none; min-height: 44px; max-height: 130px;
+  background: rgba(0,0,0,0.30);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-primary);
+  border-radius: 12px; padding: 11px 13px;
+  font-family: inherit; font-size: 14px; line-height: 1.4; outline: none;
+}
+.nova-input::placeholder { color: var(--text-tertiary); }
+.nova-input:focus { border-color: rgba(255,255,255,0.22); }
+.nova-send {
+  flex: 0 0 auto; width: 44px; height: 44px; border-radius: 12px;
+  background: var(--text-primary); color: #000; border: none; cursor: pointer;
+  font-size: 18px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.15s;
+}
+.nova-send:disabled { opacity: 0.4; cursor: default; }
+.nova-disclaimer {
+  font-size: 10.5px; color: var(--text-tertiary);
+  text-align: center; letter-spacing: 0.02em;
+}
+
 /* Hide scrollbars everywhere */
 html, body { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
@@ -1866,6 +1927,29 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   </div>
 </div>
 
+<!-- ===== NOVA — AI money coach ===== -->
+<div class="section" data-section="nova" hidden>
+  <div class="section-title">
+    <span class="section-title-text">NOVA · MONEY COACH</span>
+  </div>
+  <div class="card nova-wrap">
+    <div class="nova-messages" id="novaMessages">
+      <div class="nova-msg nova-msg-nova">Hey — I'm Nova, your money coach. I can see your net worth, subscriptions, incoming orders and wishlist. Ask me anything, or tap a starter below.</div>
+    </div>
+    <div class="nova-suggestions" id="novaSuggestions">
+      <button class="nova-chip" data-q="How am I doing financially? Give me a quick read on my net worth.">How am I doing?</button>
+      <button class="nova-chip" data-q="Where can I realistically cut back on my spending?">Where can I cut back?</button>
+      <button class="nova-chip" data-q="Can I afford everything on my wishlist right now?">Afford my wishlist?</button>
+      <button class="nova-chip" data-q="Which of my subscriptions should I review or cancel?">Review my subs</button>
+    </div>
+    <div class="nova-composer">
+      <textarea id="novaInput" class="nova-input" rows="1" placeholder="Ask Nova about your money…"></textarea>
+      <button id="novaSend" class="nova-send" aria-label="Send message">→</button>
+    </div>
+    <div class="nova-disclaimer">Nova gives general guidance, not regulated financial advice.</div>
+  </div>
+</div>
+
 </div>
 
 <!-- ===== BOTTOM TAB BAR ===== -->
@@ -1885,6 +1969,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   <button class="bot-tab" data-tab="wish">
     <span class="bot-tab-icon">🎯</span>
     <span class="bot-tab-label">Wishlist</span>
+  </button>
+  <button class="bot-tab" data-tab="nova">
+    <span class="bot-tab-icon">✨</span>
+    <span class="bot-tab-label">Nova</span>
   </button>
 </nav>
 
@@ -1935,7 +2023,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   }
   tabs.forEach(b => b.addEventListener('click', () => setActiveTab(b.dataset.tab)));
   const savedTab = storeGet(TAB_KEY);
-  setActiveTab(savedTab && ['net','subs','incoming','wish'].includes(savedTab) ? savedTab : 'net');
+  setActiveTab(savedTab && ['net','subs','incoming','wish','nova'].includes(savedTab) ? savedTab : 'net');
 
   // ============================================================
   // NET WORTH (copied from the main dashboard, verbatim logic)
@@ -3376,6 +3464,99 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   }
   safeRenderTicker();
   setInterval(safeRenderTicker, 1500);
+
+  // ============================================================
+  // NOVA — AI money coach. Sends the chat + a snapshot of the
+  // user's finances to /api/nova (Claude) and renders the reply.
+  // ============================================================
+  (function initNova() {
+    const messagesEl = document.getElementById('novaMessages');
+    const inputEl    = document.getElementById('novaInput');
+    const sendBtn    = document.getElementById('novaSend');
+    const suggEl     = document.getElementById('novaSuggestions');
+    if (!messagesEl || !inputEl || !sendBtn) return;
+
+    const convo = []; // [{ role:'user'|'assistant', content:string }]
+
+    // Snapshot of everything Nova should be able to reason about.
+    function gatherFinance() {
+      const breakdown = {};
+      let netWorthCHF = 0;
+      ['bank', 'stocks', 'crypto', 'other'].forEach(k => {
+        const items = storeGet('nw:' + k) || [];
+        breakdown[k] = items.map(it => ({ name: it.name, amountCHF: Number(it.amount) || 0 }));
+        items.forEach(it => { netWorthCHF += Number(it.amount) || 0; });
+      });
+      return {
+        currency: storeGet('nw_currency') || 'CHF',
+        netWorthCHF: Math.round(netWorthCHF),
+        accounts: breakdown,
+        subscriptions: storeGet('subs') || [],
+        incomingOrders: storeGet('incoming_orders') || [],
+        wishlist: storeGet('wishlist') || []
+      };
+    }
+
+    function addBubble(role, text) {
+      const el = document.createElement('div');
+      el.className = 'nova-msg nova-msg-' + role;
+      el.textContent = text;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return el;
+    }
+
+    async function send(text) {
+      text = (text != null ? text : inputEl.value || '').trim();
+      if (!text || sendBtn.disabled) return;
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      if (suggEl) suggEl.style.display = 'none';
+
+      addBubble('user', text);
+      convo.push({ role: 'user', content: text });
+
+      sendBtn.disabled = true;
+      const pending = addBubble('nova', 'Nova is thinking…');
+      pending.classList.add('nova-msg-loading');
+
+      try {
+        const r = await fetch('/api/nova', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: convo, finance: gatherFinance() })
+        });
+        const data = await r.json().catch(() => ({}));
+        pending.classList.remove('nova-msg-loading');
+        if (!r.ok) {
+          pending.textContent = '⚠ ' + ((data && data.error) || 'Something went wrong.');
+        } else {
+          const reply = (data.text || '').trim() || '(no response)';
+          pending.textContent = reply;
+          convo.push({ role: 'assistant', content: reply });
+        }
+      } catch (e) {
+        pending.classList.remove('nova-msg-loading');
+        pending.textContent = '⚠ Couldn’t reach Nova. Check your connection and that the server is configured.';
+      } finally {
+        sendBtn.disabled = false;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    }
+
+    // Auto-grow the textarea as the user types.
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 130) + 'px';
+    });
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    sendBtn.addEventListener('click', () => send());
+    if (suggEl) suggEl.querySelectorAll('[data-q]').forEach(chip => {
+      chip.addEventListener('click', () => send(chip.dataset.q));
+    });
+  })();
 
 })();
 </script>
