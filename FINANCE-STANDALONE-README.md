@@ -90,11 +90,9 @@ and change it to:
 
 ## 5. Lazy way — let an AI do the swap
 
-If you use Claude Code / Cursor in your dashboard folder, paste this:
-
-> Replace `finance.html` in this project with the standalone finance dashboard file I'm giving you.
-> Keep the filename exactly `finance.html` so the homepage tile and top-bar button keep linking to it.
-> Don't change any other files. After replacing, confirm the homepage and top bar still point to `finance.html`.
+If you use Claude Code / Cursor: drop the new finance HTML file into your dashboard folder,
+then paste the ready-made prompt from **[FINANCE-INSTALL-PROMPT.md](FINANCE-INSTALL-PROMPT.md)**.
+It replaces `finance.html`, checks your links, fixes encoding, and pushes the deploy for you.
 
 ---
 
