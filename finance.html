@@ -1851,24 +1851,24 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div class="rcpt-head-title">
           <span class="rcpt-emoji">🧾</span>
           <div>
-            <div class="rcpt-t">Scan a receipt</div>
-            <div class="rcpt-s">Drag a photo in — AI reads it and deducts it</div>
+            <div class="rcpt-t">Scan anything</div>
+            <div class="rcpt-s">Drop a receipt or a bank screenshot — AI reads it, you name the account</div>
           </div>
         </div>
       </div>
 
       <!-- Drop zone (default) -->
-      <div class="rcpt-drop" id="rcptDrop" role="button" tabindex="0" aria-label="Upload a receipt photo">
+      <div class="rcpt-drop" id="rcptDrop" role="button" tabindex="0" aria-label="Upload a financial image">
         <div class="rcpt-drop-icon">↗</div>
-        <div class="rcpt-drop-main">Drop a receipt here</div>
-        <div class="rcpt-drop-sub">or click to upload · paste with ⌘V</div>
+        <div class="rcpt-drop-main">Drop an image here</div>
+        <div class="rcpt-drop-sub">receipt, bill or bank screenshot · click to upload · paste with ⌘V</div>
       </div>
       <input type="file" id="rcptFile" accept="image/*" capture="environment" class="hidden" />
 
       <!-- Busy state -->
       <div class="rcpt-state hidden" id="rcptBusy">
         <img class="rcpt-thumb" id="rcptThumb" alt="" />
-        <div class="rcpt-busy-text">Reading receipt<span class="rcpt-dots"></span></div>
+        <div class="rcpt-busy-text">Reading image<span class="rcpt-dots"></span></div>
       </div>
 
       <!-- Error -->
@@ -1880,12 +1880,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <img class="rcpt-thumb" id="rcptConfirmThumb" alt="" />
           <div class="rcpt-fields">
             <div class="rcpt-field full">
-              <label for="rcptMerchant">Merchant</label>
-              <input type="text" id="rcptMerchant" placeholder="Merchant" />
+              <label for="rcptName">Account / bank name</label>
+              <input type="text" id="rcptName" list="rcptAccountList" placeholder="e.g. Revolut" autocomplete="off" />
+              <datalist id="rcptAccountList"></datalist>
             </div>
             <div class="rcpt-field">
-              <label for="rcptTotal">Total</label>
-              <input type="text" inputmode="decimal" id="rcptTotal" class="mono" placeholder="0.00" />
+              <label for="rcptAmount">Amount</label>
+              <input type="text" inputmode="decimal" id="rcptAmount" class="mono" placeholder="0.00" />
             </div>
             <div class="rcpt-field">
               <label for="rcptCurrency">Currency</label>
@@ -1896,9 +1897,22 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 <option value="GBP">GBP</option>
               </select>
             </div>
-            <div class="rcpt-field full">
-              <label for="rcptAccount">Deduct from</label>
-              <select id="rcptAccount"></select>
+            <div class="rcpt-field">
+              <label for="rcptAction">Action</label>
+              <select id="rcptAction">
+                <option value="set">Set balance</option>
+                <option value="add">Add to account</option>
+                <option value="spend">Spend (deduct)</option>
+              </select>
+            </div>
+            <div class="rcpt-field">
+              <label for="rcptCategory">Category</label>
+              <select id="rcptCategory">
+                <option value="bank">🏦 Bank</option>
+                <option value="stocks">📈 Stocks</option>
+                <option value="crypto">🪙 Crypto</option>
+                <option value="other">💼 Other</option>
+              </select>
             </div>
           </div>
         </div>
@@ -3798,9 +3812,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   })();
 
   // ============================================================
-  // RECEIPT SCANNER — drag/drop/paste a receipt photo, send it to
-  // /api/receipt (Claude vision), then deduct the total from a chosen
-  // net-worth account. No chat mentor involved — pure import tool.
+  // IMAGE SCANNER — drag/drop/paste any financial image (receipt,
+  // bill, bank-app screenshot, balance, statement), send it to
+  // /api/receipt (Claude vision), then log it to a named net-worth
+  // account: set its balance, add to it, or deduct a spend.
+  // No chat mentor involved — pure import tool.
   // ============================================================
   (function initReceiptScanner() {
     const card       = document.getElementById('rcptCard');
@@ -3812,18 +3828,21 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     const errorEl    = document.getElementById('rcptError');
     const confirmEl  = document.getElementById('rcptConfirm');
     const confThumb  = document.getElementById('rcptConfirmThumb');
-    const merchantEl = document.getElementById('rcptMerchant');
-    const totalEl    = document.getElementById('rcptTotal');
+    const nameEl     = document.getElementById('rcptName');
+    const amountEl   = document.getElementById('rcptAmount');
     const currencyEl2= document.getElementById('rcptCurrency');
-    const accountEl  = document.getElementById('rcptAccount');
+    const actionEl   = document.getElementById('rcptAction');
+    const categoryEl = document.getElementById('rcptCategory');
+    const acctListEl = document.getElementById('rcptAccountList');
     const itemsEl    = document.getElementById('rcptItems');
     const hintEl     = document.getElementById('rcptHint');
     const applyBtn   = document.getElementById('rcptApply');
     const discardBtn = document.getElementById('rcptDiscard');
 
-    const ACCT_ICONS = { bank: '🏦', stocks: '📈', crypto: '🪙', other: '💼' };
     const VALID_CCY  = ['CHF', 'USD', 'EUR', 'GBP'];
+    const CAT_NAMES  = { bank: 'Bank', stocks: 'Stocks', crypto: 'Crypto', other: 'Other' };
     let receiptDate  = '';
+    let acctIndex    = {}; // lowercased account name -> { cat }
 
     function show(el)  { el.classList.remove('hidden'); }
     function hide(el)  { el.classList.add('hidden'); }
@@ -3864,68 +3883,102 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       return { dataUrl, base64: dataUrl.split(',')[1] || '', mediaType: 'image/jpeg' };
     }
 
-    function fillAccounts() {
-      const accounts = listAllNwAccounts();
-      accountEl.innerHTML = '';
-      if (!accounts.length) {
-        const o = document.createElement('option');
-        o.value = ''; o.textContent = 'No accounts yet — add one first';
-        accountEl.appendChild(o);
-        accountEl.disabled = true;
-        return false;
-      }
-      accountEl.disabled = false;
-      accounts.forEach(a => {
-        const o = document.createElement('option');
-        o.value = a.catKey + '::' + a.itemName;
-        o.textContent = (ACCT_ICONS[a.catKey] || '') + ' ' + a.itemName + ' · ' + fmtMoney(a.amountCHF);
-        accountEl.appendChild(o);
+    // Build the autocomplete list of existing account names + an index
+    // mapping each name to its category, so typing a known name targets
+    // the right account.
+    function fillAccountList() {
+      acctListEl.innerHTML = '';
+      acctIndex = {};
+      NW_CATS.forEach(c => {
+        (storeGet('nw:' + c.key) || []).forEach(it => {
+          const nm = String(it.name || '').trim();
+          if (!nm) return;
+          acctIndex[nm.toLowerCase()] = { cat: c.key };
+          const o = document.createElement('option');
+          o.value = nm;
+          acctListEl.appendChild(o);
+        });
       });
-      return true;
+    }
+    // If the typed name matches an existing account, snap the category to it.
+    function matchAccount() {
+      const hit = acctIndex[nameEl.value.trim().toLowerCase()];
+      if (hit) categoryEl.value = hit.cat;
     }
 
-    function parseTotal() {
-      const n = parseFloat(String(totalEl.value).replace(/[^0-9.\-]/g, ''));
+    function parseAmount() {
+      const n = parseFloat(String(amountEl.value).replace(/[^0-9.\-]/g, ''));
       return isNaN(n) ? 0 : n;
     }
+    // Find an existing account by name across all categories.
+    function findAccount(name) {
+      const target = name.trim().toLowerCase();
+      for (const c of NW_CATS) {
+        const items = storeGet('nw:' + c.key) || [];
+        const idx = items.findIndex(it => String(it.name).trim().toLowerCase() === target);
+        if (idx >= 0) return { cat: c.key, items, idx, cur: Number(items[idx].amount) || 0 };
+      }
+      return null;
+    }
+
     function refreshHint() {
-      const total = parseTotal();
+      const name = nameEl.value.trim();
+      const amount = parseAmount();
       const rate = exchangeRates[currencyEl2.value] || 1;
       const datePart = receiptDate ? ('Dated ' + receiptDate + ' · ') : '';
-      if (!(total > 0)) {
-        hintEl.textContent = receiptDate ? ('Dated ' + receiptDate) : '';
-        applyBtn.disabled = true;
-        return;
+      if (!name) { hintEl.textContent = 'Type the account or bank name to log this to.'; applyBtn.disabled = true; return; }
+      if (!(amount > 0)) { hintEl.textContent = receiptDate ? ('Dated ' + receiptDate) : ''; applyBtn.disabled = true; return; }
+
+      const amtCHF = amount / rate;
+      const existing = findAccount(name);
+      const catKey = existing ? existing.cat : categoryEl.value;
+      const label = CAT_NAMES[catKey] + ' · ' + name;
+      const cur = existing ? existing.cur : 0;
+      const action = actionEl.value;
+      let msg;
+      if (action === 'set') {
+        msg = (existing ? 'Sets ' : 'Creates ') + label + ' at ' + fmtMoney(amtCHF) + '.';
+      } else if (action === 'add') {
+        msg = 'Adds ' + fmtMoney(amtCHF) + ' to ' + label + ' → ' + fmtMoney(cur + amtCHF) + '.';
+      } else {
+        msg = 'Deducts ' + fmtMoney(amtCHF) + ' from ' + label + ' → ' + fmtMoney(cur - amtCHF) + '.';
       }
-      const totalCHF = total / rate;
-      hintEl.textContent = datePart + 'Deducts ' + fmtMoney(totalCHF) + ' from your net worth.';
-      applyBtn.disabled = accountEl.disabled;
+      hintEl.textContent = datePart + msg;
+      applyBtn.disabled = false;
     }
 
     function showConfirm(receipt, dataUrl) {
       hide(busyEl); hide(errorEl); hide(dropEl);
-      if (receipt.is_receipt === false) {
-        showError("That doesn't look like a receipt. Try a clearer photo of a bill or receipt.");
+      if (receipt.readable === false) {
+        showError("Couldn't find any amounts in that image. Try a clearer screenshot or photo.");
         return;
       }
       confThumb.src = dataUrl;
-      merchantEl.value = String(receipt.merchant || '').trim();
-      const total = Number(receipt.total) || 0;
-      totalEl.value = total ? String(total) : '';
+      nameEl.value = String(receipt.source || '').trim();
+      const amount = Number(receipt.amount) || 0;
+      amountEl.value = amount ? String(amount) : '';
       let ccy = String(receipt.currency || '').toUpperCase();
       if (!VALID_CCY.includes(ccy)) ccy = (currencyEl && currencyEl.value) || 'CHF';
       currencyEl2.value = ccy;
       receiptDate = String(receipt.date || '').trim();
 
-      fillAccounts();
+      // Default action from what the image is: a balance sets the account,
+      // income adds, a spend deducts. Default category to Bank.
+      const kind = String(receipt.kind || '').toLowerCase();
+      actionEl.value = kind === 'expense' ? 'spend' : (kind === 'income' ? 'add' : 'set');
+      categoryEl.value = 'bank';
 
-      // Line items, best effort
+      fillAccountList();
+      matchAccount();
+
+      // Transactions / line items, best effort
       const items = Array.isArray(receipt.items) ? receipt.items : [];
       if (items.length) {
-        itemsEl.innerHTML = items.slice(0, 20).map(it =>
-          '<div class="rcpt-item"><span>' + escapeHtml(String(it.name || '')) + '</span>'
-          + '<span>' + (Number(it.price) ? Number(it.price).toFixed(2) : '') + '</span></div>'
-        ).join('');
+        itemsEl.innerHTML = items.slice(0, 20).map(it => {
+          const amt = Number(it.amount != null ? it.amount : it.price);
+          return '<div class="rcpt-item"><span>' + escapeHtml(String(it.name || '')) + '</span>'
+            + '<span>' + (amt ? amt.toFixed(2) : '') + '</span></div>';
+        }).join('');
         show(itemsEl);
       } else {
         itemsEl.innerHTML = ''; hide(itemsEl);
@@ -3957,35 +4010,48 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           body: JSON.stringify({ image: img.base64, mediaType: img.mediaType })
         });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) { showError((data && data.error) || 'Something went wrong reading the receipt.'); return; }
+        if (!r.ok) { showError((data && data.error) || 'Something went wrong reading the image.'); return; }
         showConfirm(data.receipt || {}, img.dataUrl);
       } catch (e) {
-        showError("Couldn't reach the receipt reader. Check your connection and that the server is configured.");
+        showError("Couldn't reach the image reader. Check your connection and that the server is configured.");
       }
     }
 
     function apply() {
       if (applyBtn.disabled) return;
-      const total = parseTotal();
-      if (!(total > 0)) { refreshHint(); return; }
-      const v = accountEl.value;
-      const ix = v.indexOf('::');
-      if (ix < 0) { showError('Pick an account to deduct from.'); return; }
-      const cat = v.slice(0, ix);
-      const name = v.slice(ix + 2);
-      const items = storeGet('nw:' + cat) || [];
-      const idx = items.findIndex(it => String(it.name) === name);
-      if (idx < 0) { fillAccounts(); refreshHint(); showError('That account no longer exists — pick another.'); return; }
+      const name = nameEl.value.trim();
+      const amount = parseAmount();
+      if (!name) { showError('Type an account or bank name to log this to.'); return; }
+      if (!(amount > 0)) { refreshHint(); return; }
 
       const rate = exchangeRates[currencyEl2.value] || 1;
-      const totalCHF = total / rate;
-      const cur = Number(items[idx].amount) || 0;
-      if (totalCHF > cur + 0.005) {
-        if (!confirm(name + " doesn't have enough — deduct anyway? (it will go negative)")) return;
+      const amtCHF = amount / rate;
+      const action = actionEl.value;
+
+      // Operate on the existing account if the name matches one; otherwise
+      // create a new account in the chosen category.
+      let { cat, items, idx, cur, isNew } = (() => {
+        const found = findAccount(name);
+        if (found) return { ...found, isNew: false };
+        const c = categoryEl.value;
+        const arr = storeGet('nw:' + c) || [];
+        arr.push({ name: name, amount: 0 });
+        return { cat: c, items: arr, idx: arr.length - 1, cur: 0, isNew: true };
+      })();
+
+      let next;
+      if (action === 'set')       next = amtCHF;
+      else if (action === 'add')  next = cur + amtCHF;
+      else                        next = cur - amtCHF; // spend
+
+      if (next < -0.005) {
+        if (!confirm('“' + name + '” will go negative (' + fmtMoney(next) + '). Log it anyway?')) return;
       }
-      items[idx].amount = cur - totalCHF;
+
+      const delta = next - cur;
+      items[idx].amount = next;
       storeSet('nw:' + cat, items);
-      logActivity(cat, merchantEl.value.trim() || 'Receipt', -totalCHF, 'edit');
+      logActivity(cat, name, delta, isNew ? 'add' : 'edit');
       renderAllNetWorth();
       reset();
     }
@@ -4022,9 +4088,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       }
     });
 
-    totalEl.addEventListener('input', refreshHint);
+    nameEl.addEventListener('input', () => { matchAccount(); refreshHint(); });
+    amountEl.addEventListener('input', refreshHint);
     currencyEl2.addEventListener('change', refreshHint);
-    accountEl.addEventListener('change', refreshHint);
+    actionEl.addEventListener('change', refreshHint);
+    categoryEl.addEventListener('change', refreshHint);
     applyBtn.addEventListener('click', apply);
     discardBtn.addEventListener('click', reset);
   })();

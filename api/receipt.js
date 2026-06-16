@@ -2,10 +2,11 @@
 // POST /api/receipt
 // Body: { image: "<base64 jpeg/png, no data: prefix>", mediaType: "image/jpeg" }
 //
-// Reads a receipt photo with Claude's vision model and returns a
-// structured JSON breakdown (merchant, date, currency, total, line
-// items). The browser then shows it for confirmation and deducts the
-// total from a chosen net-worth account.
+// Reads ANY image with financial info — receipts, bills, invoices,
+// bank / fintech app screenshots, account balances, transaction lists
+// and statements — with Claude's vision model and returns a structured
+// JSON reading. The browser then shows it for confirmation and logs it
+// to a named net-worth account (set balance / add / deduct).
 //
 // The API key lives ONLY on the server (never shipped to the browser).
 // Set it in Vercel:
@@ -23,7 +24,7 @@ export default async function handler(req, res) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     return res.status(500).json({
-      error: 'Receipt scanning is not configured yet — set ANTHROPIC_API_KEY in your Vercel environment variables.'
+      error: 'Image scanning is not configured yet — set ANTHROPIC_API_KEY in your Vercel environment variables.'
     });
   }
 
@@ -43,43 +44,54 @@ export default async function handler(req, res) {
   if (!ALLOWED.includes(mediaType)) mediaType = 'image/jpeg';
 
   const tool = {
-    name: 'record_receipt',
-    description: 'Record the structured contents of a receipt / invoice image.',
+    name: 'read_finance_image',
+    description: 'Record the financial figures read from an image: a receipt, bill, invoice, bank / fintech app screenshot, account balance, transaction list or statement.',
     input_schema: {
       type: 'object',
       properties: {
-        is_receipt: { type: 'boolean', description: 'True only if the image actually looks like a receipt, invoice or bill.' },
-        merchant:   { type: 'string',  description: 'Store / merchant name. Empty string if unreadable.' },
-        date:       { type: 'string',  description: 'Purchase date as YYYY-MM-DD if visible, else empty string.' },
-        currency:   { type: 'string',  description: 'ISO 4217 currency code, e.g. CHF, USD, EUR, GBP. Best guess from symbols/language if not explicit.' },
-        total:      { type: 'number',  description: 'Grand total actually paid (after tax). 0 if unreadable.' },
-        subtotal:   { type: 'number',  description: 'Pre-tax subtotal if shown, else 0.' },
-        tax:        { type: 'number',  description: 'Total tax/VAT if shown, else 0.' },
-        category:   { type: 'string',  description: 'One short spending category, e.g. Groceries, Dining, Transport, Shopping, Utilities, Health, Other.' },
+        readable: { type: 'boolean', description: 'True if the image contains any legible monetary amount at all.' },
+        kind: {
+          type: 'string',
+          enum: ['balance', 'expense', 'income', 'other'],
+          description: 'balance = an account balance / total shown on a banking screen; expense = money spent (receipt, outgoing payment); income = money received; other = anything else.'
+        },
+        source:   { type: 'string', description: 'Best label: the bank / app / account name for a balance (e.g. "Revolut", "Wise"), or the merchant / payee for a transaction (e.g. "Migros"). Empty if unknown.' },
+        currency: { type: 'string', description: 'ISO 4217 code (CHF, USD, EUR, GBP, ...). Infer from symbols (Fr/CHF, $, €, £) or language. Default CHF if unclear.' },
+        amount:   { type: 'number', description: 'The single most important amount: the account balance on a balance screen, or the total on a receipt/transaction. Always a positive number. 0 if none.' },
+        date:     { type: 'string', description: 'Date as YYYY-MM-DD if visible, else empty string.' },
         items: {
           type: 'array',
-          description: 'Individual line items, best effort. Omit if not legible.',
+          description: 'Individual transactions or line items if the image is a list / receipt. Best effort, omit if none.',
           items: {
             type: 'object',
             properties: {
-              name:  { type: 'string' },
-              price: { type: 'number' }
+              name:   { type: 'string' },
+              amount: { type: 'number' }
             },
-            required: ['name', 'price']
+            required: ['name', 'amount']
           }
         }
       },
-      required: ['is_receipt', 'merchant', 'currency', 'total']
+      required: ['readable', 'kind', 'source', 'currency', 'amount']
     }
   };
 
   const system =
-`You read photos of receipts, invoices and bills and extract their contents.
-- Call the record_receipt tool exactly once with your best reading of the image.
-- Numbers must be plain numbers (no currency symbols, no thousands separators).
-- "total" is the final amount the customer paid, after tax.
-- Infer the currency from symbols (Fr/CHF, $, €, £), language, or location text. If genuinely unclear, use CHF.
-- If the image is clearly NOT a receipt/invoice/bill, set is_receipt to false and leave the money fields at 0.`;
+`You read ANY image that contains financial information — receipts, bills, invoices,
+bank or fintech app screenshots, account balances, transaction lists and statements —
+and extract its figures.
+- Always call the read_finance_image tool exactly once with your best reading. Do NOT
+  refuse just because the image isn't a paper receipt; a screenshot of a bank balance
+  is perfectly valid.
+- "amount" is the single headline figure: the account balance on a balance / home
+  screen, or the grand total on a receipt or transaction. Use a positive number.
+- Set "kind" to "balance" for an account balance/total, "expense" for money spent,
+  "income" for money received, otherwise "other".
+- "source" is the bank / app / account name for a balance (e.g. Revolut, Wise), or the
+  merchant / payee for a purchase (e.g. Migros).
+- Numbers must be plain (no currency symbols, no thousands separators). Read "Fr 199.54"
+  as 199.54 with currency CHF.
+- Only set readable=false if there is genuinely no monetary amount anywhere in the image.`;
 
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -94,12 +106,12 @@ export default async function handler(req, res) {
         max_tokens: 1024,
         system,
         tools: [tool],
-        tool_choice: { type: 'tool', name: 'record_receipt' },
+        tool_choice: { type: 'tool', name: 'read_finance_image' },
         messages: [{
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
-            { type: 'text', text: 'Read this receipt and record its contents.' }
+            { type: 'text', text: 'Read this image and record any financial figures.' }
           ]
         }],
       }),
@@ -111,9 +123,9 @@ export default async function handler(req, res) {
       return res.status(r.status).json({ error: msg });
     }
 
-    const block = (data.content || []).find(b => b && b.type === 'tool_use' && b.name === 'record_receipt');
+    const block = (data.content || []).find(b => b && b.type === 'tool_use' && b.name === 'read_finance_image');
     if (!block || !block.input) {
-      return res.status(502).json({ error: 'Could not read that image. Try a clearer, well-lit photo.' });
+      return res.status(502).json({ error: 'Could not read that image. Try a clearer, well-lit photo or screenshot.' });
     }
 
     return res.status(200).json({ receipt: block.input });
